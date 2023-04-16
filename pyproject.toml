@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "repl_python3_ai-best-version"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+pandas = "^1.5.3"
+black = "^22.12.0"
+sty = "^1.0.4"
+numba = "^0.56.4"
+autopalette = "^0.1.0"
+torch = "^2.0.0"
+nltk = "^3.8.1"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
