@@ -2,6 +2,7 @@ from numpy import random, array, exp, dot, ndarray
 import pickle
 import math
 import numpy as np
+import sys
 
 
 def tanh(x):
@@ -12,7 +13,7 @@ def tanh_derivative(x):
     return 1 - np.tanh(x) ** 2
 
 
-def to_categorical(y, num_classes=None, dtype="float32"):
+def to_categorical(y, num_classes=None, dtype="longdouble"):
     """Converts a class vector (integers) to binary class matrix.
 
     E.g. for use with `categorical_crossentropy`.
@@ -22,7 +23,7 @@ def to_categorical(y, num_classes=None, dtype="float32"):
             (integers from 0 to `num_classes - 1`).
         num_classes: Total number of classes. If `None`, this would be inferred
           as `max(y) + 1`.
-        dtype: The data type expected by the input. Default: `'float32'`.
+        dtype: The data type expected by the input. Default: `'longdouble'`.
 
     Returns:
         A binary matrix representation of the input as a NumPy array. The class
@@ -71,12 +72,37 @@ def gelu_derivative(x):
         * cdf
     )
 
+def bounded_gelu(x):
+    c = 1.702
+    y = np.minimum(np.maximum(x, -c), c)
+    result = 0.5 * x * (1 + np.tanh(c * y))
+    if np.any(np.isnan(result)) or np.any(np.isinf(result)):
+        print("Input:", x)
+        print("Bounded input:", y)
+        print("Output:", result)
+        sys.exit()
+    return result
+
+
+def bounded_gelu_derivative(x):
+    c = 1.702
+    fx = bounded_gelu(x)
+    alpha = 0.5 * c * (1.0 + np.tanh(c * np.minimum(np.maximum(x, -c), c))) + \
+            0.5 * (fx + np.abs(fx)) * (1 - np.tanh(c * np.minimum(np.maximum(x, -c), c)) ** 2)
+    return alpha
 
 def softmax(x):
-    exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
-    return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+    x = x - np.max(x, axis=-1, keepdims=True) # subtract maximum value from each element
+    exp_x = np.exp(x)
+    softmax_x = exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+    if np.isnan(softmax_x).any():
+        print("Input:", x)
+        print("Exponential:", exp_x)
+        print("Denominator:", np.sum(exp_x, axis=-1, keepdims=True))
+        sys.exit()
+    return softmax_x
 
-
+print(softmax(np.array([[1, 2, 3, 4, 5]])))
 def softmax_derivative(x):
     s = softmax(x)
     return s * (1 - s)
@@ -169,6 +195,7 @@ activation_functions = {
     "linear": [linear, linear_derivative],
     "maxout": [maxout, maxout_derivative],
     "swish": [swish, swish_derivative],
+    "bounded_gelu": [bounded_gelu, bounded_gelu_derivative]
 }
 
 
@@ -212,7 +239,7 @@ class NeuralNetwork:
                 )
                 i += 1
         else:
-            self.synaptic_weights = array(synaptic_weights, dtype=np.float128)
+            self.synaptic_weights = array(synaptic_weights, dtype=np.longdouble)
 
     def __del__(self):
         if self.save_funct:
@@ -228,21 +255,24 @@ class NeuralNetwork:
         log_every=False,
         save_every=False,
         test_on_log=False,
+        lambda_val=0.01, # for the L2
+        max_adjustment_norm=np.inf
     ):
         """
         Batch Size of 0 means fit all the data into one batch.
         """
+        #TODO: add bias term
         if batch_size == 0:
             batch_size = len(training_inputs)
         if len(training_inputs) != len(training_outputs):
             raise ValueError(
                 "Training inputs and training outputs must be the same length."
             )
-        print(f"Starting training, log every {log_every}, save every {save_every}.")
-        training_inputs = array(training_inputs, dtype=np.float128)
-        training_outputs = array(training_outputs, dtype=np.float128)
+        training_inputs = array(training_inputs, dtype=np.longdouble)
+        training_outputs = array(training_outputs, dtype=np.longdouble)
         # training the model to make accurate predictions while adjusting weights continually
         num_batches = math.ceil(len(training_inputs) / batch_size)
+        print(f"Starting training, log every {log_every}, save every {save_every}.")
         for iteration in range(training_iterations):
             # Shuffle the input data before each epoch
             shuffle_indices = np.random.permutation(len(training_inputs))
@@ -254,7 +284,7 @@ class NeuralNetwork:
                 outputs = training_outputs[
                     batch * batch_size : (batch + 1) * batch_size
                 ]
-                # siphon the training data via  the neuron
+                # siphon the training data via the neuron
                 layer_outputs = [inputs]
                 for i in range(len(self.synaptic_weights)):
                     layer_inputs = []
@@ -286,15 +316,19 @@ class NeuralNetwork:
                             layer_outputs[i + 1]
                         ),
                     )
-                # TODO: add L2 weight thing
                 for i in range(len(self.synaptic_weights)):
                     layer_inputs = []
                     for j in self.architecture[i][1]:
                         layer_inputs.append(layer_outputs[j])
                     layer_inputs = np.concatenate(layer_inputs, axis=-1)
                     adjustments = dot(layer_inputs.T, layer_errors[i])
-
-                    self.synaptic_weights[i] += learning_rate * adjustments
+                    if max_adjustment_norm != np.inf:
+                        adjustments_norm = np.linalg.norm(adjustments)
+                        if adjustments_norm > max_adjustment_norm:
+                            adjustments *= max_adjustment_norm / adjustments_norm
+                    # add L2 regularization term
+                    l2_reg = learning_rate * lambda_val * self.synaptic_weights[i]
+                    self.synaptic_weights[i] += learning_rate * (adjustments - l2_reg)
                 if log_every and ((iteration + 1) * (batch + 1)) % log_every == 0:
                     print(
                         f"Iter: {iteration+1}/{training_iterations}; Batch: {batch+1}/{num_batches}; {100 * (iteration+1)/training_iterations}%"

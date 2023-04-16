@@ -3,7 +3,7 @@ import numpy as np
 import dataloader
 from pickle import dump, load as pload
 from os.path import isfile, join
-
+print(np.finfo(np.longdouble).max)
 saveFile = "gpt-2l-20in"
 
 
@@ -31,21 +31,24 @@ tokens = (
 print(tokens, len(tokens))
 
 input_length = 20
-architecture = [(20, [0], "gelu"), (20, [0], "gelu"), (len(tokens), [1], "softmax")]
+architecture = [(20, [0], "bounded_gelu"), (20, [0], "bounded_gelu"), (len(tokens), [1], "softmax")]
 try:
     with open(join("models", saveFile), "rb") as f:
         nn = pload(f)
+    print('Loaded.')
 except:
+    print('Creating')
     nn = NeuralNetwork(input_length, architecture=architecture, save_funct=save)
 
 context = dataloader.fill(
-    tokenizer("the quic"), input_length, 0, reverse=True
+    tokenizer("the quick "), input_length, 0, reverse=True
 )  # input context as a numpy array
 prediction = nn.think(context)  # generate prediction as a numpy array
 
 predicted_word_index = np.argmax(prediction)
 predicted_word = dataloader.fill(decoder([predicted_word_index]), input_length, 0, True)
-print(predicted_word)
+prop_dict = dict(zip(tokens, prediction))
+print(prediction, dict(sorted(prop_dict.items(), key=lambda x: x[1], reverse=True)), np.random.choice(tokens, 1, p=prediction))
 
 contexts, next_words = dataloader.load_data("processed_data", 10, 1)
 fix = (
@@ -75,15 +78,16 @@ next_words = to_categorical(
     [dataloader.fill(tokenizer(fix(next_word)), 1)[0] for next_word in next_words],
     len(tokens),
 )
-print(next_words[0])
 nn.train(
     contexts,
     next_words,
-    training_iterations=100,
-    batch_size=1,
-    learning_rate=0.01,
-    log_every=1,
-    save_every=1,
+    training_iterations=10000,
+    batch_size=2**14, #CAN BE INCREASED!
+    learning_rate=0.0001,
+    log_every=64,
+    save_every=64,
+    lambda_val=0.1,
+    max_adjustment_norm=100
 )
 
 

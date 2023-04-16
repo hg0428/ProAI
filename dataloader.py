@@ -1,20 +1,20 @@
 import os
 import re
 import time
-import nltk
-from nltk.stem import WordNetLemmatizer
-from nltk.corpus import wordnet, stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
+# import nltk
+# from nltk.stem import WordNetLemmatizer
+# from nltk.corpus import wordnet, stopwords
+# from nltk.tokenize import word_tokenize, sent_tokenize
 from numpy import random, array, exp, dot, ndarray
 from json import load
 
-nltk.download("averaged_perceptron_tagger", quiet=True)
-nltk.download("wordnet", quiet=True)
-nltk.download("stopwords", quiet=True)
-nltk.download("punkt", quiet=True)
-stop_words = set(stopwords.words("english"))
+# nltk.download("averaged_perceptron_tagger", quiet=True)
+# nltk.download("wordnet", quiet=True)
+# nltk.download("stopwords", quiet=True)
+# nltk.download("punkt", quiet=True)
+# stop_words = set(stopwords.words("english"))
 
-lemmatizer = WordNetLemmatizer()
+# lemmatizer = WordNetLemmatizer()
 
 
 def fill(l, length, null=0, reverse=False):
