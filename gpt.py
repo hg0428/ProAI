@@ -82,8 +82,8 @@ nn.train(
     contexts,
     next_words,
     training_iterations=10000,
-    batch_size=2**14, #CAN BE INCREASED!
-    learning_rate=0.0001,
+    batch_size=2**14,
+    learning_rate=0.01,
     log_every=64,
     save_every=64,
     lambda_val=0.1,
