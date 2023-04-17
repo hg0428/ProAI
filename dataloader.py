@@ -1,20 +1,20 @@
 import os
 import re
 import time
-# import nltk
-# from nltk.stem import WordNetLemmatizer
-# from nltk.corpus import wordnet, stopwords
-# from nltk.tokenize import word_tokenize, sent_tokenize
+import nltk
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import wordnet, stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
 from numpy import random, array, exp, dot, ndarray
 from json import load
 
-# nltk.download("averaged_perceptron_tagger", quiet=True)
-# nltk.download("wordnet", quiet=True)
-# nltk.download("stopwords", quiet=True)
-# nltk.download("punkt", quiet=True)
-# stop_words = set(stopwords.words("english"))
+nltk.download("averaged_perceptron_tagger", quiet=True)
+nltk.download("wordnet", quiet=True)
+nltk.download("stopwords", quiet=True)
+nltk.download("punkt", quiet=True)
+stop_words = set(stopwords.words("english"))
 
-# lemmatizer = WordNetLemmatizer()
+lemmatizer = WordNetLemmatizer()
 
 
 def fill(l, length, null=0, reverse=False):
@@ -90,7 +90,135 @@ def get_wordnet_pos(treebank_tag):
     else:
         return None
 
-
+contractions = {
+    "ain't": "am not",
+    "aren't": "are not",
+    "can't": "cannot",
+    "can't've": "cannot have",
+    "'cause": "because",
+    "could've": "could have",
+    "couldn't": "could not",
+    "couldn't've": "could not have",
+    "didn't": "did not",
+    "doesn't": "does not",
+    "don't": "do not",
+    "hadn't": "had not",
+    "hadn't've": "had not have",
+    "hasn't": "has not",
+    "haven't": "have not",
+    "he'd": "he would",
+    "he'd've": "he would have",
+    "he'll": "he will",
+    "he'll've": "he will have",
+    "he's": "he is",
+    "how'd": "how did",
+    "how'd'y": "how do you",
+    "how'll": "how will",
+    "how's": "how is",
+    "i'd": "I would",
+    "i'd've": "I would have",
+    "i'll": "I will",
+    "i'll've": "I will have",
+    "i'm": "I am",
+    "i've": "I have",
+    "isn't": "is not",
+    "it'd": "it would",
+    "it'd've": "it would have",
+    "it'll": "it will",
+    "it'll've": "it will have",
+    "it's": "it is",
+    "let's": "let us",
+    "ma'am": "madam",
+    "mayn't": "may not",
+    "might've": "might have",
+    "mightn't": "might not",
+    "mightn't've": "might not have",
+    "must've": "must have",
+    "mustn't": "must not",
+    "mustn't've": "must not have",
+    "needn't": "need not",
+    "needn't've": "need not have",
+    "o'clock": "of the clock",
+    "oughtn't": "ought not",
+    "oughtn't've": "ought not have",
+    "shan't": "shall not",
+    "sha'n't": "shall not",
+    "shan't've": "shall not have",
+    "she'd": "she would",
+    "she'd've": "she would have",
+    "she'll": "she will",
+    "she'll've": "she will have",
+    "she's": "she is",
+    "should've": "should have",
+    "shouldn't": "should not",
+    "shouldn't've": "should not have",
+    "so've": "so have",
+    "so's": "so is",
+    "that'd": "that would",
+    "that'd've": "that would have",
+    "that's": "that is",
+    "there'd": "there would",
+    "there'd've": "there would have",
+    "there's": "there is",
+    "they'd": "they would",
+    "they'd've": "they would have",
+    "they'll": "they will",
+    "they'll've": "they will have",
+    "they're": "they are",
+    "they've": "they have",
+    "to've": "to have",
+    "wasn't": "was not",
+    "we'd": "we would",
+    "we'd've": "we would have",
+    "we'll": "we will",
+    "we'll've": "we will have",
+    "we're": "we are",
+    "we've": "we have",
+    "weren't": "were not",
+    "what'll": "what will",
+    "what'll've": "what will have",
+    "what're": "what are",
+    "what's": "what is",
+    "what've": "what have",
+    "when's": "when is",
+    "when've": "when have",
+    "where'd": "where did",
+    "where's": "where is",
+    "where've": "where have",
+    "who'll": "who will",
+    "who'll've": "who will have",
+    "who's": "who is",
+    "who've": "who have",
+    "why's": "why is",
+    "why've": "why have",
+    "will've": "will have",
+    "won't": "will not",
+    "won't've": "will not have",
+    "would've": "would have",
+    "wouldn't": "would not",
+    "wouldn't've": "would not have",
+    "y'all": "you all",
+    "y'all'd": "you all would",
+    "y'all'd've": "you all would have",
+    "y'all're": "you all are",
+    "y'all've": "you all have",
+    "you'd": "you would",
+    "you'd've": "you would have",
+    "you'll": "you will",
+    "you'll've": "you will have",
+    "you're": "you are",
+    "you've": "you have",
+    "dr.": "doctor",
+    "mr.": "mister",
+    "mrs.": "missus",
+    "ms.": "miss",
+    "jr.": "junior",
+    "sr.": "senior",
+    "co.": "company",
+    "inc.": "incorporated",
+    "ltd.": "limited",
+    "a.i.": "artificial intelligence",
+}
 def preprocess_text(text):
     sentances = sent_tokenize(text)
     words = []
@@ -111,6 +239,8 @@ def preprocess_text(text):
                     word = word[0]
                 if len(newtext) != 0 and newtext[-1] != " ":
                     newtext += " "
+                if word in contractions:
+                    word = contractions[word]
                 newtext += word
     # Join the words back into a string
     return text.strip(" ")
@@ -157,11 +287,13 @@ def loadJsonData(x, bits_per_character, max_in, max_out, pre_processor=lambda x:
         fill(process_value(pre_processor(out), bits_per_character), max_out)
         for out in data.values()
     ]
-
-
+    
 if __name__ == "__main__":
     for filename in os.listdir("data"):
+        print(filename)
         filepath = os.path.join("data", filename)
         with open(filepath, "r", encoding="utf-8") as f:
             with open(os.path.join("processed_data", filename), "w") as newf:
-                newf.write(preprocess_text(f.read().lower().replace("\t", "")))
+                new = preprocess_text(f.read().lower().replace("\t", "").replace('\n', ' '))
+                new = re.sub('\s+', ' ', new)
+                newf.write(new)
