@@ -1,8 +1,13 @@
 from numpy import random, array, exp, dot, ndarray
+from random import randint
 import pickle
 import math
 import numpy as np
 import sys
+#from numba import jit
+#if optimizer is not None:
+                    #     self.synaptic_weights[i] = optimizer.update(self.synaptic_weights[i], gradients + l2_reg, learning_rate)
+                    # else:
 
 
 def tanh(x):
@@ -12,7 +17,7 @@ def tanh(x):
 def tanh_derivative(x):
     return 1 - np.tanh(x) ** 2
 
-
+#@jit(nopython=True)
 def to_categorical(y, num_classes=None, dtype="longdouble"):
     """Converts a class vector (integers) to binary class matrix.
 
@@ -76,11 +81,6 @@ def bounded_gelu(x):
     c = 1.702
     y = np.minimum(np.maximum(x, -c), c)
     result = 0.5 * x * (1 + np.tanh(c * y))
-    if np.any(np.isnan(result)) or np.any(np.isinf(result)):
-        print("Input:", x)
-        print("Bounded input:", y)
-        print("Output:", result)
-        sys.exit()
     return result
 
 
@@ -95,14 +95,9 @@ def softmax(x):
     x = x - np.max(x, axis=-1, keepdims=True) # subtract maximum value from each element
     exp_x = np.exp(x)
     softmax_x = exp_x / np.sum(exp_x, axis=-1, keepdims=True)
-    if np.isnan(softmax_x).any():
-        print("Input:", x)
-        print("Exponential:", exp_x)
-        print("Denominator:", np.sum(exp_x, axis=-1, keepdims=True))
-        sys.exit()
     return softmax_x
 
-print(softmax(np.array([[1, 2, 3, 4, 5]])))
+
 def softmax_derivative(x):
     s = softmax(x)
     return s * (1 - s)
@@ -198,6 +193,11 @@ activation_functions = {
     "bounded_gelu": [bounded_gelu, bounded_gelu_derivative]
 }
 
+def mse_loss(predicted_output, actual_output):
+    """
+    Calculates the mean squared error loss between predicted output and actual output.
+    """
+    return np.mean((predicted_output - actual_output) ** 2)
 
 def xavier_init(n, m):
     """
@@ -207,10 +207,43 @@ def xavier_init(n, m):
     weights = np.random.randn(n, m) * epsilon
     return weights
 
+class AdamW:
+    def __init__(self, beta1=0.9, beta2=0.999, epsilon=1e-8, weight_decay=0.01):
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.weight_decay = weight_decay
+        self.m = None
+        self.v = None
+        self.t = 0
+    
+    def update(self, weights, gradients, learning_rate):
+        #print(weights.shape, gradients.shape, self.id)
+        self.t += 1
+        if self.m is None:
+            self.m = [np.zeros_like(w) for w in weights]
+            self.v = [np.zeros_like(w) for w in weights]
+
+        for i in range(len(weights)):
+            self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * gradients[i]
+            self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * np.square(gradients[i])
+
+            m_hat = self.m[i] / (1 - self.beta1 ** self.t)
+            v_hat = self.v[i] / (1 - self.beta2 ** self.t)
+
+            weights[i] = weights[i] - learning_rate * (m_hat / (np.sqrt(v_hat) + self.epsilon) + self.weight_decay * weights[i])
+
+        return weights
+
+class StochasticGradientDescent:
+    def __init__(self, weight_decay=0.01):
+        self.weight_decay = weight_decay
+    def update(self, weights, gradients, learning_rate):
+        pass
 
 class NeuralNetwork:
     def __init__(
-        self, input_length=4, architecture=[], synaptic_weights=None, save_funct=None
+        self, input_length=4, architecture=[], synaptic_weights=None, save_funct=None, init_seed=randint(0, 99999)
     ):
         """
         architecture syntax:
@@ -223,9 +256,10 @@ class NeuralNetwork:
         self.save_funct = save_funct
         self.layers = len(architecture) + 1
         self.architecture = architecture
+        self.init_seed = init_seed
         if synaptic_weights == None:
             # seeding for random number generation
-            random.seed(1)
+            random.seed(self.init_seed)
 
             # creating synaptic weights for each layer
             self.synaptic_weights = []
@@ -249,31 +283,42 @@ class NeuralNetwork:
         self,
         training_inputs,
         training_outputs,
-        training_iterations=1,
+        training_epochs=1,
         batch_size=0,
         learning_rate=0.5,
         log_every=False,
         save_every=False,
         test_on_log=False,
         lambda_val=0.01, # for the L2
-        max_adjustment_norm=np.inf
+        max_adjustment_norm=np.inf,
+        learning_rate_schedule=None,
+        optimizers=None
     ):
         """
         Batch Size of 0 means fit all the data into one batch.
         """
-        #TODO: add bias term
+        #TODO: add bias term, early stopping, other optimizers, like Adam (GPT-3 used AdamW)
+        #TODO: add multiprocessing
+        #TODO: use numba to use GPU for some functions
+        # Consider using a different loss function such as categorical cross-entropy or mean squared error depending on the task.
         if batch_size == 0:
             batch_size = len(training_inputs)
         if len(training_inputs) != len(training_outputs):
             raise ValueError(
                 "Training inputs and training outputs must be the same length."
             )
+        if optimizers is None:
+            optimizers = [None] * len(self.synaptic_weights)
+        if len(optimizers) != len(self.synaptic_weights):
+            raise ValueError('There must be exactly one optimizer per layer. The optimizers argument should be a list.')
         training_inputs = array(training_inputs, dtype=np.longdouble)
         training_outputs = array(training_outputs, dtype=np.longdouble)
         # training the model to make accurate predictions while adjusting weights continually
         num_batches = math.ceil(len(training_inputs) / batch_size)
         print(f"Starting training, log every {log_every}, save every {save_every}.")
-        for iteration in range(training_iterations):
+        for epoch in range(training_epochs):
+            if learning_rate_schedule is not None:
+                learning_rate = learning_rate_schedule(learning_rate, epoch)
             # Shuffle the input data before each epoch
             shuffle_indices = np.random.permutation(len(training_inputs))
             training_inputs = training_inputs[shuffle_indices]
@@ -287,10 +332,7 @@ class NeuralNetwork:
                 # siphon the training data via the neuron
                 layer_outputs = [inputs]
                 for i in range(len(self.synaptic_weights)):
-                    layer_inputs = []
-                    for j in self.architecture[i][1]:
-                        layer_inputs.append(layer_outputs[j])
-                    layer_inputs = np.concatenate(layer_inputs, axis=-1)
+                    layer_inputs = np.concatenate([layer_outputs[j] for j in self.architecture[i][1]], axis=-1)
                     layer_outputs.append(
                         activation_functions[self.architecture[i][2]][0](
                             dot(layer_inputs, self.synaptic_weights[i])
@@ -317,39 +359,40 @@ class NeuralNetwork:
                         ),
                     )
                 for i in range(len(self.synaptic_weights)):
-                    layer_inputs = []
-                    for j in self.architecture[i][1]:
-                        layer_inputs.append(layer_outputs[j])
-                    layer_inputs = np.concatenate(layer_inputs, axis=-1)
-                    adjustments = dot(layer_inputs.T, layer_errors[i])
+                    layer_inputs = np.concatenate([layer_outputs[j] for j in self.architecture[i][1]], axis=-1)
+                    gradients = dot(layer_inputs.T, layer_errors[i])
                     if max_adjustment_norm != np.inf:
-                        adjustments_norm = np.linalg.norm(adjustments)
-                        if adjustments_norm > max_adjustment_norm:
-                            adjustments *= max_adjustment_norm / adjustments_norm
+                        gradients_norm = np.linalg.norm(gradients)
+                        if gradients_norm > max_adjustment_norm:
+                            gradients *= max_adjustment_norm / gradients_norm
                     # add L2 regularization term
                     l2_reg = learning_rate * lambda_val * self.synaptic_weights[i]
-                    self.synaptic_weights[i] += learning_rate * (adjustments - l2_reg)
-                if log_every and ((iteration + 1) * (batch + 1)) % log_every == 0:
+                    optimizer = optimizers[i]
+                    if optimizer is None:
+                        # use stochastic gradient descent optimizer by default
+                        self.synaptic_weights[i] += learning_rate * (gradients + l2_reg)
+                    else:
+                        # use the provided optimizer
+                        self.synaptic_weights[i] = optimizer.update(self.synaptic_weights[i], gradients, learning_rate)
+                if log_every and ((epoch * num_batches) + batch + 1) % log_every == 0:
                     print(
-                        f"Iter: {iteration+1}/{training_iterations}; Batch: {batch+1}/{num_batches}; {100 * (iteration+1)/training_iterations}%"
+                        f"Iter: {epoch+1}/{training_epochs}; Batch: {batch+1}/{num_batches}; {100 * (((batch+1)*(epoch+1)))/((num_batches+1)*(training_epochs+1))}%"
                     )
                     if test_on_log:
                         test_on_log(self)
                 if (
                     self.save_funct
                     and save_every
-                    and ((iteration + 1) * (batch + 1)) % log_every == 0
+                    and ((epoch) * (num_batches)) + batch + 1 % log_every == 0
                 ):
                     self.save_funct(self)
-
+    def grid_search(self, learning_rates, batch_sizes, lambda_vals):
+        pass #TODO
     def think(self, inputs):
         # passing the inputs via the neuron to get output
         layer_outputs = [inputs]
         for i in range(len(self.synaptic_weights)):
-            layer_inputs = []
-            for j in self.architecture[i][1]:
-                layer_inputs.append(layer_outputs[j])
-            layer_inputs = np.concatenate(layer_inputs, axis=-1)
+            layer_inputs = np.concatenate([layer_outputs[j] for j in self.architecture[i][1]], axis=-1)
             layer_outputs.append(
                 activation_functions[self.architecture[i][2]][0](
                     dot(layer_inputs, self.synaptic_weights[i])
@@ -357,12 +400,3 @@ class NeuralNetwork:
             )
         return layer_outputs[-1]
 
-
-if __name__ == "__main__":
-    x = NeuralNetwork(32, 32, 8, 2)
-    x.train(
-        [process_value("hi"), process_value("hey")],
-        [process_value("hey"), process_value("hi")],
-        20,
-    )
-    print(decode(x.think(process_value("hi"))))

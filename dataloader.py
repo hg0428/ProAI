@@ -1,20 +1,8 @@
 import os
 import re
 import time
-import nltk
-from nltk.stem import WordNetLemmatizer
-from nltk.corpus import wordnet, stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
-from numpy import random, array, exp, dot, ndarray
 from json import load
 
-nltk.download("averaged_perceptron_tagger", quiet=True)
-nltk.download("wordnet", quiet=True)
-nltk.download("stopwords", quiet=True)
-nltk.download("punkt", quiet=True)
-stop_words = set(stopwords.words("english"))
-
-lemmatizer = WordNetLemmatizer()
 
 
 def fill(l, length, null=0, reverse=False):
@@ -289,11 +277,46 @@ def loadJsonData(x, bits_per_character, max_in, max_out, pre_processor=lambda x:
     ]
     
 if __name__ == "__main__":
-    for filename in os.listdir("data"):
+    from unidecode import unidecode
+    # import nltk
+    # from nltk.stem import WordNetLemmatizer
+    # from nltk.corpus import wordnet, stopwords
+    # from nltk.tokenize import word_tokenize, sent_tokenize
+    # from numpy import random, array, exp, dot, ndarray
+    
+    # nltk.download("averaged_perceptron_tagger", quiet=True)
+    # nltk.download("wordnet", quiet=True)
+    # nltk.download("stopwords", quiet=True)
+    # nltk.download("punkt", quiet=True)
+    # stop_words = set(stopwords.words("english"))
+    
+    #lemmatizer = WordNetLemmatizer()
+    fix = (
+        lambda x: unidecode(x.replace("”", '"')
+        .replace("“", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("…", ".")
+        .replace("=", " equals ")
+        .replace("{", "(")
+        .replace("}", ")")
+        .replace("[", "(")
+        .replace("]", ")")
+        .replace("\xa0", " ")
+        .replace("›", ">")
+        .replace("‹", "<")
+        .replace('_', '-')
+        .replace('%', ' percent'))
+    )
+    for filename in os.listdir("processed_data"):
         print(filename)
-        filepath = os.path.join("data", filename)
+        filepath = os.path.join("processed_data", filename)
         with open(filepath, "r", encoding="utf-8") as f:
-            with open(os.path.join("processed_data", filename), "w") as newf:
-                new = preprocess_text(f.read().lower().replace("\t", "").replace('\n', ' '))
+            with open(os.path.join("new_processed_data", filename), "w") as newf:
+                #new = preprocess_text(f.read().lower().replace("\t", "").replace('\n', ' '))
+                new = f.read()
+                new = fix(new)
                 new = re.sub('\s+', ' ', new)
                 newf.write(new)
