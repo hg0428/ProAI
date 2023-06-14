@@ -237,9 +237,10 @@ class AdamW:
 
 class StochasticGradientDescent:
     def __init__(self, weight_decay=0.01):
-        self.weight_decay = weight_decay
+        self.weight_decay = weight_decay # for L2
     def update(self, weights, gradients, learning_rate):
-        pass
+        l2_reg = learning_rate * self.weight_decay * self.synaptic_weights[i]
+        return weights + learning_rate * (gradients + l2_reg)
 
 class NeuralNetwork:
     def __init__(
@@ -275,10 +276,6 @@ class NeuralNetwork:
         else:
             self.synaptic_weights = array(synaptic_weights, dtype=np.longdouble)
 
-    def __del__(self):
-        if self.save_funct:
-            self.save_funct(self)
-
     def train(
         self,
         training_inputs,
@@ -289,10 +286,12 @@ class NeuralNetwork:
         log_every=False,
         save_every=False,
         test_on_log=False,
-        lambda_val=0.01, # for the L2
         max_adjustment_norm=np.inf,
         learning_rate_schedule=None,
-        optimizers=None
+        optimizers=None,
+        lambda_val=0.01,
+        test_inputs=None,
+        test_outputs=None
     ):
         """
         Batch Size of 0 means fit all the data into one batch.
@@ -313,6 +312,12 @@ class NeuralNetwork:
             raise ValueError('There must be exactly one optimizer per layer. The optimizers argument should be a list.')
         training_inputs = array(training_inputs, dtype=np.longdouble)
         training_outputs = array(training_outputs, dtype=np.longdouble)
+        if test_inputs:
+            test_inputs = array(test_inputs, dtype=np.longdouble)
+            test_outputs = array(test_outputs, dtype=np.longdouble)
+        else:
+            test_inputs = training_inputs
+            test_outputs = training_outputs
         # training the model to make accurate predictions while adjusting weights continually
         num_batches = math.ceil(len(training_inputs) / batch_size)
         print(f"Starting training, log every {log_every}, save every {save_every}.")
@@ -339,25 +344,19 @@ class NeuralNetwork:
                         )
                     )
                 output = layer_outputs[-1]
-
                 # computing error rate for back-propagation
                 error = outputs - output
 
                 # performing weight adjustments
-                layer_errors = [
-                    error
-                    * activation_functions[self.architecture[-1][2]][1](
-                        layer_outputs[-1]
-                    )
-                ]
+                layer_errors = [error * activation_functions[self.architecture[-1][2]][1](layer_outputs[-1])]
                 for i in reversed(range(len(self.synaptic_weights) - 1)):
+                    layer_input_errors = dot(layer_errors[0], self.synaptic_weights[i + 1].T)
                     layer_errors.insert(
                         0,
-                        dot(layer_errors[0], self.synaptic_weights[i + 1].T)
-                        * activation_functions[self.architecture[i][2]][1](
-                            layer_outputs[i + 1]
-                        ),
+                        layer_input_errors[:, :self.architecture[i][0]] # take only the relevant part of the error
+                        * activation_functions[self.architecture[i][2]][1](layer_outputs[i + 1])
                     )
+                test_loss = mse_loss(self.think(test_inputs), test_outputs)
                 for i in range(len(self.synaptic_weights)):
                     layer_inputs = np.concatenate([layer_outputs[j] for j in self.architecture[i][1]], axis=-1)
                     gradients = dot(layer_inputs.T, layer_errors[i])
@@ -365,15 +364,19 @@ class NeuralNetwork:
                         gradients_norm = np.linalg.norm(gradients)
                         if gradients_norm > max_adjustment_norm:
                             gradients *= max_adjustment_norm / gradients_norm
-                    # add L2 regularization term
-                    l2_reg = learning_rate * lambda_val * self.synaptic_weights[i]
                     optimizer = optimizers[i]
                     if optimizer is None:
+                        # add L2 regularization term
+                        l2_reg = learning_rate * lambda_val * self.synaptic_weights[i]
                         # use stochastic gradient descent optimizer by default
-                        self.synaptic_weights[i] += learning_rate * (gradients + l2_reg)
+                        new_weights = self.synaptic_weights[i] + learning_rate * (gradients + l2_reg)
                     else:
                         # use the provided optimizer
-                        self.synaptic_weights[i] = optimizer.update(self.synaptic_weights[i], gradients, learning_rate)
+                        new_weights = optimizer.update(self.synaptic_weights[i], gradients, learning_rate)
+                    new_test_loss = mse_loss(self.think(test_inputs, {i:new_weights}), test_outputs)
+                    if new_test_loss <= test_loss:
+                        self.synaptic_weights[i] = new_weights
+                        test_loss = new_test_loss
                 if log_every and ((epoch * num_batches) + batch + 1) % log_every == 0:
                     print(
                         f"Iter: {epoch+1}/{training_epochs}; Batch: {batch+1}/{num_batches}; {100 * (((batch+1)*(epoch+1)))/((num_batches+1)*(training_epochs+1))}%"
@@ -388,14 +391,18 @@ class NeuralNetwork:
                     self.save_funct(self)
     def grid_search(self, learning_rates, batch_sizes, lambda_vals):
         pass #TODO
-    def think(self, inputs):
+    def think(self, inputs, layer_weights={}):
         # passing the inputs via the neuron to get output
         layer_outputs = [inputs]
         for i in range(len(self.synaptic_weights)):
+            if i in layer_weights:
+                weights = layer_weights[i]
+            else:
+                weights = self.synaptic_weights[i]
             layer_inputs = np.concatenate([layer_outputs[j] for j in self.architecture[i][1]], axis=-1)
             layer_outputs.append(
                 activation_functions[self.architecture[i][2]][0](
-                    dot(layer_inputs, self.synaptic_weights[i])
+                    dot(layer_inputs, weights)
                 )
             )
         return layer_outputs[-1]

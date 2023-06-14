@@ -1,15 +1,14 @@
-#WATCH CHURCH SERVICE FIRST
-
 from nn import NeuralNetwork, to_categorical, AdamW
 import numpy as np
 import dataloader
 from pickle import dump, load as pload
-from os.path import isfile, join
+from os.path import isfile, join, exists
+from os import makedirs
 from unidecode import unidecode
 from proai.tokenizer import Tokenizer
 import atexit
-saveFile = "GPT-50l-50in"
-input_length = 50
+saveFile = "custom_arch-56l-5in"
+input_length = 5
 
 def save(model=None):
     if model == None:
@@ -18,22 +17,43 @@ def save(model=None):
     print("Saved!")
 
 
-# tokens = (
-#     [""]
-#     + [chr(x) for x in range(32, 65)]
-#     + [chr(x) for x in range(91, 127)]
-# )
+def generate_architecture(num_layers):
+    arch = []
+    layer_id = 0
+    layer_num = 0
+    for i in reversed(range(1, num_layers + 1)):
+        for x in range(i):
+            inps = [0] if layer_num == 0 else list(range(layer_id+layer_num, layer_id+layer_num+i+1))
+            arch.append((input_length, inps, "gelu"))
+        if layer_num != 0:
+            layer_id += i
+        layer_num += 1 
+    return arch
 
-# [tokens.remove(x) for x in "@\\{}|^+#=[]_~`%"]
-# print(tokens, len(tokens))
-#try:
-tokenizer = Tokenizer.from_save_file(join("models", saveFile, 'tokenizer.json'))
-with open(join("models", saveFile, 'model.pkl'), "rb") as f:
-    nn = pload(f)
-print('Loaded.')
-# except:
-#     print('Creating')
-#     nn = NeuralNetwork(input_length, architecture=architecture, save_funct=save)
+try:
+    tokenizer = Tokenizer.from_save_file(join("models", saveFile, 'tokenizer.json'))
+    with open(join("models", saveFile, 'model.pkl'), "rb") as f:
+        nn = pload(f)
+    print('Loaded.')
+except:
+    print('Creating')
+    newpath = join("models", saveFile)
+    if not exists(newpath):
+        makedirs(newpath)
+    tokens = (
+        [""]
+        + [chr(x) for x in range(32, 65)]
+        + [chr(x) for x in range(91, 127)]
+    )
+    [tokens.remove(x) for x in "@\\{}|^+#=[]_~`%"]
+    architecture = generate_architecture(10)
+    architecture.append((len(tokens), [len(architecture)], "softmax"))
+    print(architecture, len(architecture))
+    print(tokens, len(tokens))
+    tokenizer = Tokenizer(tokens)
+    tokenizer.save_to_file(join("models", saveFile, 'tokenizer.json'))
+    nn = NeuralNetwork(input_length, architecture=architecture, save_funct=save)
+    save(nn)
 
 
 def predict(context):
@@ -48,10 +68,11 @@ def predict(context):
     # np.random.choice(tokenizer.vocabulary, 1, p=prediction)
     prop_dict = dict(sorted(prop_dict.items(), key=lambda x: x[1], reverse=True))
     print(prop_dict)
+    print(list(prop_dict.keys()).index('b'))
     return prop_dict
 
 predict('the quick ')
-contexts, next_words = dataloader.load_data("new_processed_data", 10, 1)
+contexts, next_words = [], []#dataloader.load_data("new_processed_data", 10, 1)
 fix = (
     lambda x: unidecode(x.replace("”", '"')
     .replace("“", '"')
@@ -84,7 +105,7 @@ def get_training_permutations(string, input_len):
     return perm_dict
 
 training_data = {}
-training_data = get_training_permutations('the quick brown fox jumps over a lazy dog', 5)
+training_data = get_training_permutations('the quick brown', 5)
 to_categorical([1], 55)
 contexts = [
     dataloader.fill(tokenizer.tokenize(context), input_length, 0, reverse=True)
@@ -95,42 +116,34 @@ next_words = to_categorical(
     len(tokenizer.vocabulary),
 )
 print('Ready to begin training. Constructing Optimizers...')
+start_lr = 0.01
 def learning_rate_scheduler(lr, epoch):
     if epoch < 10:
-        return lr
+        return start_lr
     elif epoch < 20:
-        return lr * 0.1
+        return start_lr * 0.1
     elif epoch < 30:
-        return lr * 0.01
+        return start_lr * 0.01
     else:
-        return lr * 0.001
+        return start_lr * 0.001
 
 atexit.register(save)
 optimizers = []
 for i in range(len(nn.architecture)):
-    optimizers.append(AdamW(beta1=0.9, beta2=0.999, epsilon=1e-8, weight_decay=0.01))
+    optimizers.append(AdamW(beta1=0.9, beta2=0.999, epsilon=1e-8, weight_decay=0))
 print("Optimizers constructed. Converting data to numpy arrays...")    
-nn.train( # Takes 24 min per iter
+nn.train( # Takes 24 (probably a lot more now) min per iter for GPT-50l-50in, Takes 381.36 hours (probably more now) for custom_arch-56l-50in
     contexts,
     next_words,
-    training_epochs=1000,
-    batch_size=16,
-    learning_rate=3,
+    training_epochs=10000,
+    batch_size=1,
+    learning_rate=start_lr,
     log_every=100,
     save_every=None,
-    test_on_log=None, #lambda x: [predict("hello"), predict('ello ')],
-    lambda_val=0.04,
-    max_adjustment_norm=10,
+    test_on_log=lambda x: predict('the quick '),
+    lambda_val=0,
+    max_adjustment_norm=3,
     learning_rate_schedule=learning_rate_scheduler,
-    optimizers=optimizers
+    optimizers=None#optimizers
 )
 
-
-num_predictions = 10  # number of predictions to generate
-predictions = []
-
-for i in range(num_predictions):
-    prediction = np.squeeze(nn.think(context))
-    predicted_word_index = np.random.multinomial(1, prediction).argmax()
-    predicted_word = tokenizer.decode([predicted_word_index])
-    predictions.append(predicted_word)
