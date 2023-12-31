@@ -17,7 +17,7 @@ def save(model=None):
     print("Saved!")
 
 
-def generate_architecture(num_layers):
+def generate_architecture(num_layers): #For my custom arch
     arch = []
     layer_id = 0
     layer_num = 0
@@ -106,7 +106,6 @@ def get_training_permutations(string, input_len):
 
 training_data = {}
 training_data = get_training_permutations('the quick brown', 5)
-to_categorical([1], 55)
 contexts = [
     dataloader.fill(tokenizer.tokenize(context), input_length, 0, reverse=True)
     for context in contexts + list(training_data.keys())]
